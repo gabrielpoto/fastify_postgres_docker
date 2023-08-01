@@ -20,33 +20,35 @@ async function routes(fastify, options) {
     });
 
     //GET AL USERS
+
     fastify.route({
         method: 'GET',
         url: '/users',
         handler: async function (request, reply) {
-            fastify.pg.connect(onConnect);
-            function onConnect(err, client, release) {
-                if (err) return reply.send(err);
-                client.query('SELECT * from users', function onResult(err, result) {
-                    release();
-                    reply.send(err || result.rows);
-                });
+            try {
+                const client = await fastify.pg.connect();
+                const result = await client.query('SELECT * FROM users');
+                client.release();
+                reply.send(result.rows);
+            } catch (err) {
+                reply.send(err);
             }
         },
     });
+
 
     //GET ONE USER if exists
     fastify.route({
         method: 'GET',
         url: '/users/:id',
         handler: async function (request, reply) {
-            fastify.pg.connect(onConnect);
-            function onConnect(err, client, release) {
-                if (err) return reply.send(err);
-                client.query(`SELECT * from users where id=${request.params.id}`, function onResult(err, result) {
-                    release();
-                    reply.send(err || result.rows[0]);
-                });
+            try {
+                const client = await fastify.pg.connect();
+                const result = await client.query('SELECT * FROM users WHERE id = $1', [request.params.id]);
+                client.release();
+                reply.send(result.rows[0]);
+            } catch (err) {
+                reply.send(err);
             }
         },
     });
@@ -55,18 +57,19 @@ async function routes(fastify, options) {
     fastify.route({
         method: 'POST',
         url: '/users',
-        handler: function (request, reply) {
-            fastify.pg.connect(onConnect);
-            function onConnect(err, client, release) {
-                if (err) return reply.send(err);
+        handler: async function (request, reply) {
+            try {
+                const client = await fastify.pg.connect();
                 const newUser = request.body;
-                client.query(
-                    `INSERT into users (name,description,tweets) VALUES('${newUser.name}','${newUser.description}',${newUser.tweets})`,
-                    function onResult(err, result) {
-                        release();
-                        reply.send(err || result);
-                    }
-                );
+                const result = await client.query('INSERT into users (name, description, tweets) VALUES ($1, $2, $3) RETURNING *', [
+                    newUser.name,
+                    newUser.description,
+                    newUser.tweets,
+                ]);
+                client.release();
+                reply.send(result.rows[0]);
+            } catch (err) {
+                reply.send(err);
             }
         },
     });
@@ -76,21 +79,24 @@ async function routes(fastify, options) {
         method: 'PUT',
         url: '/users/:id',
         handler: async function (request, reply) {
-            fastify.pg.connect(onConnect);
-            async function onConnect(err, client, release) {
-                if (err) return reply.send(err);
-                const oldUserReq = await client.query(`SELECT * from users where id=${request.params.id}`);
+            try {
+                const client = await fastify.pg.connect();
+                const oldUserReq = await client.query('SELECT * FROM users WHERE id = $1', [request.params.id]);
                 const oldUser = oldUserReq.rows[0];
-                client.query(
-                    `UPDATE users SET(name,description,tweets) = ('${request.body.name}', '${request.body.description || oldUser.description}', ${
-                        request.body.tweets || oldUser.tweets
-                    })
-      WHERE id=${request.params.id}`,
-                    function onResult(err, result) {
-                        release();
-                        reply.send(err || `Updated: ${request.params.id}`);
-                    }
+
+                const name = request.body.name || oldUser.name;
+                const description = request.body.description || oldUser.description;
+                const tweets = request.body.tweets || oldUser.tweets;
+
+                await client.query(
+                    'UPDATE users SET name = $1, description = $2, tweets = $3 WHERE id = $4',
+                    [name, description, tweets, request.params.id]
                 );
+
+                client.release();
+                reply.send(`Updated: ${request.params.id}`);
+            } catch (err) {
+                reply.send(err);
             }
         },
     });
@@ -100,13 +106,13 @@ async function routes(fastify, options) {
         method: 'DELETE',
         url: '/users/:id',
         handler: async function (request, reply) {
-            fastify.pg.connect(onConnect);
-            function onConnect(err, client, release) {
-                if (err) return reply.send(err);
-                client.query(`DELETE FROM users WHERE id=${request.params.id}`, function onResult(err, result) {
-                    release();
-                    reply.send(err || `Deleted: ${request.params.id}`);
-                });
+            try {
+                const client = await fastify.pg.connect();
+                await client.query('DELETE FROM users WHERE id = $1', [request.params.id]);
+                client.release();
+                reply.send(`Deleted: ${request.params.id}`);
+            } catch (err) {
+                reply.send(err);
             }
         },
     });
